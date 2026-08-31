@@ -4708,6 +4708,7 @@ To replace with real photography, find each SWAP comment and update the URL.
 
       /* ── Form ── */
       function initForm() {
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxmBtAFxnfZ3eq3e1q6ZNb_jo0Mz96blTaRrumpbwHH2Fy04x5gJX1Phyjk7Dmt5fmz/exec';
         const form = document.getElementById('enq-form');
         const thanks = document.getElementById('f-thanks');
         form.querySelectorAll('.f-field').forEach(field => {
@@ -4751,7 +4752,7 @@ To replace with real photography, find each SWAP comment and update the URL.
           });
         });
 
-        form.addEventListener('submit', function (e) {
+        form.addEventListener('submit', async function (e) {
           e.preventDefault();
           submitted = true;
           const results = checks.map(c => validateField(c.id, c.err, c.test));
@@ -4761,6 +4762,65 @@ To replace with real photography, find each SWAP comment and update the URL.
             if (bad) bad.focus();
             return;
           }
+
+          const submitBtn = form.querySelector('.f-submit');
+          const submitLabel = submitBtn ? submitBtn.querySelector('span') : null;
+          const originalLabel = submitLabel ? submitLabel.textContent : '';
+
+          if (submitBtn) submitBtn.disabled = true;
+          if (submitLabel) submitLabel.textContent = 'Sending...';
+
+          const formData = new FormData(form);
+          const stayDetails = [
+            formData.get('start_date') ? 'Check-in: ' + formData.get('start_date') : '',
+            formData.get('end_date') ? 'Check-out: ' + formData.get('end_date') : '',
+            formData.get('guests') ? 'Guests: ' + formData.get('guests') : '',
+            formData.get('message') ? 'Remarks: ' + formData.get('message') : ''
+          ].filter(Boolean).join('\n');
+          const params = new URLSearchParams(window.location.search);
+
+          let submitIp = 'Unknown';
+          try {
+            const ipResponse = await fetch('https://api.ipify.org?format=json');
+            if (ipResponse.ok) submitIp = (await ipResponse.json()).ip || 'Unknown';
+          } catch (error) {
+            console.warn('IP lookup failed:', error);
+          }
+
+          // Match the field names used by the existing villaraag.com form so
+          // both pages append leads to the same Google Sheet columns.
+          const payload = {
+            fullName: formData.get('name') || '',
+            email: formData.get('email') || '',
+            phone: formData.get('phone') || '',
+            country: '',
+            description: stayDetails,
+            verification: 'VILLARAAG',
+            utm_source: params.get('gad_source') || params.get('utm_source') || '',
+            utm_medium: params.get('utm_medium') || '',
+            utm_campaign: params.get('gad_campaignid') || params.get('utm_campaign') || '',
+            utm_content: params.get('utm_content') || '',
+            utm_keyword: params.get('gclid') || params.get('utm_term') || '',
+            lead_source_url: window.location.href,
+            submit_time: new Date().toLocaleString(),
+            submit_ip: submitIp
+          };
+
+          try {
+            await fetch(GOOGLE_SCRIPT_URL, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+          } catch (error) {
+            console.error('Enquiry submission failed:', error);
+            alert('There was an error submitting your enquiry. Please try again.');
+            if (submitBtn) submitBtn.disabled = false;
+            if (submitLabel) submitLabel.textContent = originalLabel;
+            return;
+          }
+
           function showThanks() {
             form.style.display = 'none';
             thanks.style.display = 'flex';
